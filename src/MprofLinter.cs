@@ -154,6 +154,7 @@ namespace Mono.Profiling
 			{
 				if (!loadedDomain.Contains (domainName.Id))
 					Fail (domainName, string.Format ("Invalid domain id {0}", domainName.Id));
+				++event_count;
 			}
 
 			HashSet<long> loadedContexts = new HashSet <long> ();
@@ -202,6 +203,7 @@ namespace Mono.Profiling
 			{
 				if (!runningThreads.Contains (threadName.Id))
 					Fail (threadName, string.Format ("Invalid thread id {0:X}", threadName.Id));
+				++event_count;
 			}
 
 			public override void Visit (JitHelperEvent thread)
@@ -224,6 +226,36 @@ namespace Mono.Profiling
 								loadedMethods [frame.MethodId].CodeSize));
 					}
 				}
+				++event_count;
+			}
+
+			//Heapshot related events
+			bool heapshotInProgress = false;
+
+			public override void Visit (HeapshotStartEvent evt)
+			{
+				if (heapshotInProgress)
+					Fail (evt, "Heapshot started while another one is in progress");
+
+				heapshotInProgress = true;
+				++event_count;
+			}
+
+			public override void Visit (HeapshotEndEvent evt)
+			{
+				if (!heapshotInProgress)
+					Fail (evt, "Heapshot ended while no heapshot in progress");
+				heapshotInProgress = false;
+				++event_count;
+			}
+
+			public override void Visit (HeapshotObjectEvent evt)
+			{
+				if (!heapshotInProgress)
+					Fail ("Heapshot object received while no heapshot in progress");
+				if (!loadedTypes.Contains (evt.TypeId))
+					Fail (evt, "Allocation for unreported type");
+				++event_count;
 			}
 
 			//GC related events
@@ -232,6 +264,7 @@ namespace Mono.Profiling
 				if (!loadedTypes.Contains (evt.TypeId))
 					Fail (evt, "Allocation for unreported type");
 				VerifyBacktrace (evt, evt.Frames);
+				++event_count;
 			}
 
 			HashSet<ulong> gchandles = new HashSet <ulong> ();
@@ -242,6 +275,7 @@ namespace Mono.Profiling
 				gchandles.Add (handle.HandleId);
 
 				VerifyBacktrace (handle, handle.Frames);
+				++event_count;
 			}
 
 			public override void Visit (HandleDestroyedEvent evt)
@@ -251,6 +285,7 @@ namespace Mono.Profiling
 				gchandles.Remove (evt.HandleId);
 
 				VerifyBacktrace (evt, evt.Frames);
+				++event_count;
 			}
 
 			//counters
@@ -262,6 +297,8 @@ namespace Mono.Profiling
 						Fail (evt, string.Format ("Duplicate counter index {0}", counter.Index));
 					counters [counter.Index] = counter.Type;
 				}
+
+				++event_count;
 			}
 
 			public override void Visit (CounterSampleEvent evt)
@@ -272,6 +309,8 @@ namespace Mono.Profiling
 					else if (sample.Type != counters [sample.Index])
 						Fail (evt, string.Format ("Invalid type {0} for sample {0}", sample.Type, sample.Index));
 				}
+
+				++event_count;
 			}
 
 			//misc events
