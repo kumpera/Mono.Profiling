@@ -19,6 +19,14 @@ namespace Mono.Profiling
 			this.VisitDefault (evt);
 		}
 
+		public virtual void Visit (ExceptionClauseEvent evt) {
+			this.VisitDefault (evt);
+		}
+
+		public virtual void Visit (ExceptionThrownEvent evt) {
+			this.VisitDefault (evt);
+		}
+
 		public virtual void Visit (JitHelperEvent evt) {
 			this.VisitDefault (evt);
 		}
@@ -63,11 +71,27 @@ namespace Mono.Profiling
 			this.VisitDefault (evt);
 		}
 
+		public virtual void Visit (HeapshotStartEvent evt) {
+			this.VisitDefault (evt);
+		}
+
+		public virtual void Visit (HeapshotEndEvent evt) {
+			this.VisitDefault (evt);
+		}
+
+		public virtual void Visit (HeapshotObjectEvent evt) {
+			this.VisitDefault (evt);
+		}
+
 		public virtual void Visit (RootsEvent evt) {
 			this.VisitDefault (evt);
 		}
 
 		public virtual void Visit (HandleCreatedEvent evt) {
+			this.VisitDefault (evt);
+		}
+
+		public virtual void Visit (HandleDestroyedEvent evt) {
 			this.VisitDefault (evt);
 		}
 
@@ -87,7 +111,11 @@ namespace Mono.Profiling
 			this.VisitDefault (evt);
 		}
 
+		public virtual void Visit (MonitorEvent evt) {
+			this.VisitDefault (evt);
+		}
+
 		public abstract void VisitDefault (Event evt);
-		
+
 	}
 }

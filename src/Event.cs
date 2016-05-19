@@ -37,6 +37,13 @@ namespace Mono.Profiling
 		Unload = 4 << 4,
 	}
 
+	public enum MonitorEventType {
+		ProfilerMonitorContention = 1,
+		ProfilerMonitorDone = 2,
+		ProfilerMonitorFail = 3,
+		BacktraceBit = 1 << 7
+	}
+
 	public enum MetadataKind {
 		Class = 1,
 		Image = 2,
@@ -58,6 +65,12 @@ namespace Mono.Profiling
         PreStartWorld,
         PostStartWorld,
 		Last
+	}
+
+	public enum ExceptionEventType {
+		Throw = 0 << 4,
+		Clause = 1 << 4,
+		BacktraceBit = 1 << 7
 	}
 
 	public enum GCHandleType {
@@ -287,6 +300,59 @@ namespace Mono.Profiling
 		}
 	}
 
+
+	public abstract class ExceptionEvent : Event {
+		public ulong Time { get; protected set; }
+
+		public override EventType EventType {
+			get { return EventType.Exception; }
+		}
+	}
+
+	public class ExceptionClauseEvent : ExceptionEvent {
+		public ulong ClauseType { get; private set; }
+		public ulong ClauseNum { get; private set; }
+		public long MethodId { get; private set; }
+
+		public ExceptionClauseEvent (ulong time, ulong clauseType, ulong clauseNum, long methodId)
+		{
+			Time = time;
+			ClauseType = clauseType;
+			ClauseNum = clauseNum;
+			MethodId = methodId;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("ExceptionClauseEvent Time:{0:X} ClauseType:{1} ClauseNum:{2} MethodId:{3:X}", Time, ClauseType, ClauseNum, MethodId);
+		}
+	}
+
+	public class ExceptionThrownEvent : ExceptionEvent {
+		public long ObjectId { get; private set; }
+		public long[] Frames { get; private set; }
+		public ExceptionThrownEvent (ulong time, long objectId, long[] frames)
+		{
+			Time = time;
+			ObjectId = objectId;
+			Frames = frames;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("ExceptionThrown Time:{0:X} ObjectId:{1:X} Frames{2}", Time, ObjectId, Frames == null ? -1 : Frames.Length);
+		}
+	}
 
 	public abstract class RuntimeEvent : Event {
 		public override EventType EventType {
@@ -540,8 +606,8 @@ namespace Mono.Profiling
 			for (int i = 0; i < MovedObjects.Length; i += 2)
 				str += string.Format ("\n\t{0:X} -> {1:X}", MovedObjects [i], MovedObjects [i + 1]);
 			return str;
-			
-		}		
+
+		}
 	}
 
 	public enum GCRootType {
@@ -584,6 +650,72 @@ namespace Mono.Profiling
 	public abstract class HeapEvent : Event {
 		public override EventType EventType {
 			get { return EventType.Heap; }
+		}
+	}
+
+	public class HeapshotStartEvent : HeapEvent
+	{
+		public ulong Time { get; private set; }
+
+		public HeapshotStartEvent (ulong time)
+		{
+			Time = time;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotStarted Time:{0:X}", Time);
+		}
+	}
+
+	public class HeapshotEndEvent : HeapEvent
+	{
+		public ulong Time { get; private set; }
+
+		public HeapshotEndEvent (ulong time)
+		{
+			Time = time;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotEnded Time:{0:X}", Time);
+		}
+	}
+
+	public class HeapshotObjectEvent : HeapEvent
+	{
+		public long ObjectId { get; private set; }
+		public long TypeId { get; private set; }
+		public ulong Size { get; private set; }
+		public long[] References { get; private set; }
+
+		public HeapshotObjectEvent (long address, long type, ulong size, long [] references)
+		{
+			ObjectId = address;
+			TypeId = type;
+			Size = size;
+			References = references;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotObject ObjectId:{0:X} TypeId:{1:X} Size:{2} References:{3}", ObjectId, TypeId, Size, References == null ? 0 : References.Length);
 		}
 	}
 
@@ -639,6 +771,32 @@ namespace Mono.Profiling
 		}
 	}
 
+	public class HandleDestroyedEvent : GCEvent
+	{
+		public ulong Time { get; private set; }
+		public GCHandleType Type { get; private set; }
+		public ulong HandleId { get; private set; }
+		public long[] Frames { get; private set; }
+
+		public HandleDestroyedEvent (ulong time, GCHandleType type, ulong handleId, long[] frames)
+		{
+			Time = time;
+			Type = type;
+			HandleId = handleId;
+			Frames = frames;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HandleDestroyedEvent Time:{0:X} Type:{1} HandleId:{2:X} Frames{3}", Time, Type, HandleId, Frames == null ? -1 : Frames.Length);
+		}
+	}
+
 	public class CountersDescEvent : SamplingEvent {
 		public CounterDesc[] Counters { get; private set; }
 
@@ -687,7 +845,7 @@ namespace Mono.Profiling
 			return str;
 		}
 	}
-	
+
 	public class ManagedHit {
 		public long MethodId { get; private set; }
 		public int IlOffset { get; private set; }
@@ -768,6 +926,33 @@ namespace Mono.Profiling
 		}
 	}
 
+	public class MonitorEvent : Event {
+		public ulong Time { get; private set; }
+		public long ObjectId { get; private set; }
+		public long[] Frames { get; private set; }
+
+		public override EventType EventType {
+			get { return EventType.Monitor; }
+		}
+
+		public MonitorEvent (ulong time, long objectId, long[] frames)
+		{
+			Time = time;
+			ObjectId = objectId;
+			Frames = frames;
+		}
+
+		public override void Visit (EventVisitor visitor)
+		{
+			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("MonitorEvent Time:{0:X} ObjectId:{1:X} Frames:{2}", Time, ObjectId, Frames == null ? -1 : Frames.Length);
+		}
+	}
+
 
 	public abstract class Event {
 		public const int MAX_FRAMES = 32;
@@ -782,7 +967,7 @@ namespace Mono.Profiling
 			ulong flags = dec.DecodeUleb ();
 			if (flags != 0)
 				throw new Exception (string.Format ("Backtrace with non zero flag {0}", flags));
-				
+
 			ulong num_frames = dec.DecodeUleb ();
 			if (num_frames > MAX_FRAMES)
 				throw new Exception (string.Format ("Backtrace with more frames than allowed {0}", num_frames));
@@ -810,6 +995,10 @@ namespace Mono.Profiling
 		static Event DecodeGCEvent (BufferDecoder dec, GCEventType type)
 		{
 			ulong time = dec.DecodeTime ();
+			ulong handle_type;
+			ulong handle;
+			long[] frames = null;
+
 			switch (type) {
 			case GCEventType.GC: {
 				ulong event_type = dec.DecodeUleb ();
@@ -835,21 +1024,27 @@ namespace Mono.Profiling
 
 			case GCEventType.HandleCreatedBt:
 			case GCEventType.HandleCreated: {
-				ulong handle_type = dec.DecodeUleb ();
-				ulong handle = dec.DecodeUleb ();
+				handle_type = dec.DecodeUleb ();
+				handle = dec.DecodeUleb ();
 				long obj = dec.DecodeObject ();
-				long[] frames = null;
 				if (type == GCEventType.HandleCreatedBt)
 					frames = DecodeBacktrace (dec);
 				if (handle_type >= (ulong)GCHandleType.Last)
 					throw new Exception (string.Format ("Invalid GC handle type {0}", handle_type));
-	
+
 				return new HandleCreatedEvent (time, (GCHandleType)handle_type, handle, obj, frames);
 			}
 
 			case GCEventType.HandleDestroyed:
 			case GCEventType.HandleDestroyedBt:
-				throw new Exception (string.Format ("Invalid GC event type {0}", type));
+				handle_type = dec.DecodeUleb ();
+				handle = dec.DecodeUleb ();
+				if (type == GCEventType.HandleDestroyedBt)
+					frames = DecodeBacktrace (dec);
+				if (handle_type >= (ulong)GCHandleType.Last)
+					throw new Exception (string.Format ("Invalid GC handle type {0}", handle_type));
+
+				return new HandleDestroyedEvent (time, (GCHandleType)handle_type, handle, frames);
 
 			default:
 				throw new Exception (string.Format ("Invalid GC event type {0}", type));
@@ -946,13 +1141,42 @@ namespace Mono.Profiling
 			}
 		}
 
+		static Event DecodeMonitorEvent (BufferDecoder dec, MonitorEventType type)
+		{
+			ulong time = dec.DecodeTime ();
+			long objectId = dec.DecodeObject ();
+			long[] frames = null;
+			byte ev = (byte) (((int) type >> 4) & 0x3);
+			if (ev == (byte) MonitorEventType.ProfilerMonitorContention && type.HasFlag (MonitorEventType.BacktraceBit))
+				frames = DecodeBacktrace (dec);
+
+			return new MonitorEvent (time, objectId, frames);
+		}
+
 		static Event DecodeHeapEvent (BufferDecoder dec, HeapEventType type)
 		{
+			ulong time;
+
 			switch (type) {
 			case HeapEventType.Start:
+				time = dec.DecodeTime ();
+				return new HeapshotStartEvent (time);
+
 			case HeapEventType.End:
+				time = dec.DecodeTime ();
+				return new HeapshotEndEvent (time);
+
 			case HeapEventType.Object:
-				throw new Exception (string.Format ("Don't know how to decode heap event of type {0}", type));
+				long objectId = dec.DecodeObject ();
+				long typeId = dec.DecodePointer ();
+				ulong size = dec.DecodeUleb ();
+				ulong numRefs = dec.DecodeUleb ();
+				long[] references = new long [numRefs];
+				for (ulong i = 0; i < numRefs; i++) {
+					dec.DecodeSleb (); //this read unused RelOffset
+					references [i] = dec.DecodeSleb ();
+				}
+				return new HeapshotObjectEvent (objectId, typeId, size, references);
 
 			case HeapEventType.Root: {
 				int count = dec.DecodeIndex ();
@@ -1123,6 +1347,29 @@ namespace Mono.Profiling
 			}
 		}
 
+		static Event DecodeExceptionEvent (BufferDecoder dec, ExceptionEventType type)
+		{
+			ulong time = dec.DecodeTime ();
+			switch (type & (ExceptionEventType.BacktraceBit - 1)) {
+			case ExceptionEventType.Clause:
+				ulong clauseType = dec.DecodeUleb ();
+				ulong clauseNum = dec.DecodeUleb ();
+				long methodBase = dec.DecodeSleb ();
+				return new ExceptionClauseEvent (time, clauseType, clauseNum, methodBase);
+
+			case ExceptionEventType.Throw:
+				long objectId = dec.DecodePointer ();
+				long[] frames = null;
+				if ((type & ExceptionEventType.BacktraceBit) == ExceptionEventType.BacktraceBit) {
+					frames = DecodeBacktrace (dec);
+				}
+
+				return new ExceptionThrownEvent (time, objectId, frames);
+			default:
+				throw new Exception (string.Format ("Don't know how to decode runtime event of type {0}", type));
+			}
+		}
+
 		internal static Event DecodeOne (BufferDecoder dec)
 		{
 			int event_id = dec.ReadByte ();
@@ -1132,12 +1379,16 @@ namespace Mono.Profiling
 			switch (type) {
 			case EventType.Alloc:
 				return DecodeAllocEvent (dec, (AllocEventType)extended_type);
+			case EventType.Exception:
+				return DecodeExceptionEvent (dec, (ExceptionEventType)extended_type);
 			case EventType.Gc:
 				return DecodeGCEvent (dec, (GCEventType)extended_type);
 			case EventType.Metadata:
 				return DecodeMetadataEvent (dec, (MetadataEventType)extended_type);
 			case EventType.Method:
 				return DecodeMethodEvent (dec, (MethodEventType)extended_type);
+			case EventType.Monitor:
+				return DecodeMonitorEvent (dec, (MonitorEventType) extended_type);
 			case EventType.Heap:
 				return DecodeHeapEvent (dec, (HeapEventType)extended_type);
 			case EventType.Sample:
