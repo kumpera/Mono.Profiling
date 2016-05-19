@@ -49,7 +49,7 @@ namespace Mono.Profiling
 			const bool ReportInvalidSampleOffset = false;
 
 			int event_count, ignored_count, errors;
-			
+
 			HashSet<long> loadedTypes = new HashSet <long> ();
 			HashSet<long> runningThreads = new HashSet <long> ();
 
@@ -98,7 +98,7 @@ namespace Mono.Profiling
 				} else {
 					Fail (cls, "Invalid event Kind");
 				}
-				++event_count;				
+				++event_count;
 			}
 
 			HashSet<long> loadedImages = new HashSet <long> ();
@@ -179,7 +179,7 @@ namespace Mono.Profiling
 					Fail (method, "method already loaded");
 				loadedMethods [method.MethodId] = method;
 
-				++event_count;				
+				++event_count;
 			}
 
 			public override void Visit (ThreadEvent thread)
@@ -219,7 +219,7 @@ namespace Mono.Profiling
 						Fail (sample, string.Format ("Invalid MethodId {0:X}", frame.MethodId));
 					} else if ((ulong)frame.NativeOffset > loadedMethods [frame.MethodId].CodeSize) {
 						if (ReportInvalidSampleOffset)
-							Fail (sample, string.Format ("Invalid native offset {0}, method size is {1}", 
+							Fail (sample, string.Format ("Invalid native offset {0}, method size is {1}",
 								frame.NativeOffset,
 								loadedMethods [frame.MethodId].CodeSize));
 					}
@@ -242,6 +242,15 @@ namespace Mono.Profiling
 				gchandles.Add (handle.HandleId);
 
 				VerifyBacktrace (handle, handle.Frames);
+			}
+
+			public override void Visit (HandleDestroyedEvent evt)
+			{
+				if (!gchandles.Contains (evt.HandleId))
+					Fail (evt, string.Format ("Unknown handle id {0}", evt.HandleId));
+				gchandles.Remove (evt.HandleId);
+
+				VerifyBacktrace (evt, evt.Frames);
 			}
 
 			//counters
