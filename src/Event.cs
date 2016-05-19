@@ -326,6 +326,11 @@ namespace Mono.Profiling
 		{
 			visitor.Visit (this);
 		}
+
+		public override string ToString ()
+		{
+			return string.Format ("ExceptionClauseEvent Time:{0:X} ClauseType:{1} ClauseNum:{2} MethodId:{3:X}", Time, ClauseType, ClauseNum, MethodId);
+		}
 	}
 
 	public class ExceptionThrownEvent : ExceptionEvent {
@@ -341,6 +346,11 @@ namespace Mono.Profiling
 		public override void Visit (EventVisitor visitor)
 		{
 			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("ExceptionThrown Time:{0:X} ObjectId:{1:X} Frames{2}", Time, ObjectId, Frames == null ? -1 : Frames.Length);
 		}
 	}
 
@@ -656,6 +666,11 @@ namespace Mono.Profiling
 		{
 			visitor.Visit (this);
 		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotStarted Time:{0:X}", Time);
+		}
 	}
 
 	public class HeapshotEndEvent : HeapEvent
@@ -670,6 +685,11 @@ namespace Mono.Profiling
 		public override void Visit (EventVisitor visitor)
 		{
 			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotEnded Time:{0:X}", Time);
 		}
 	}
 
@@ -691,6 +711,11 @@ namespace Mono.Profiling
 		public override void Visit (EventVisitor visitor)
 		{
 			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HeapshotObject ObjectId:{0:X} TypeId:{1:X} Size:{2} References:{3}", ObjectId, TypeId, Size, References == null ? 0 : References.Length);
 		}
 	}
 
@@ -764,6 +789,11 @@ namespace Mono.Profiling
 		public override void Visit (EventVisitor visitor)
 		{
 			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("HandleDestroyedEvent Time:{0:X} Type:{1} HandleId:{2:X} Frames{3}", Time, Type, HandleId, Frames == null ? -1 : Frames.Length);
 		}
 	}
 
@@ -915,6 +945,11 @@ namespace Mono.Profiling
 		public override void Visit (EventVisitor visitor)
 		{
 			visitor.Visit (this);
+		}
+
+		public override string ToString ()
+		{
+			return string.Format ("MonitorEvent Time:{0:X} ObjectId:{1:X} Frames:{2}", Time, ObjectId, Frames == null ? -1 : Frames.Length);
 		}
 	}
 
