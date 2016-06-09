@@ -29,6 +29,23 @@ namespace Mono.Profiling
 
 	*/
 
+	struct Allocation {
+		public ulong Time;
+		public long TypeId;
+		public long ObjectId;
+		public ulong Size;
+		public long[] Frames;
+
+		public Allocation (ulong time, long typeId, long objectId, ulong size, long[] frames)
+		{
+			Time = time;
+			TypeId = typeId;
+			ObjectId = objectId;
+			Size = size;
+			Frames = frames;
+		}
+	}
+
 	public class MprofLinter {
 		Decoder decoder;
 		VerificationVisitor visitor;
@@ -52,6 +69,7 @@ namespace Mono.Profiling
 
 			HashSet<long> loadedTypes = new HashSet <long> ();
 			HashSet<long> runningThreads = new HashSet <long> ();
+			Dictionary<long, Allocation> allocations = new Dictionary<long, Allocation> ();
 
 			void Fail (Event evt, string reason) {
 				Console.WriteLine ("FAIL: {0} on {1}", reason, evt.GetType ().Name);
@@ -255,6 +273,11 @@ namespace Mono.Profiling
 					Fail ("Heapshot object received while no heapshot in progress");
 				if (!loadedTypes.Contains (evt.TypeId))
 					Fail (evt, "Allocation for unreported type");
+
+				Allocation alloc;
+				if (!allocations.TryGetValue (evt.ObjectId, out alloc))
+					Fail (evt, "Object in heapshot not known at this time");
+
 				++event_count;
 			}
 
@@ -264,6 +287,13 @@ namespace Mono.Profiling
 				if (!loadedTypes.Contains (evt.TypeId))
 					Fail (evt, "Allocation for unreported type");
 				VerifyBacktrace (evt, evt.Frames);
+
+				Allocation alloc;
+				if (allocations.TryGetValue (evt.ObjectId, out alloc))
+					Fail (evt, "Allocation at address already in use");
+				alloc = new Allocation (evt.Time, evt.TypeId, evt.ObjectId, evt.Size, evt.Frames);
+				allocations [evt.ObjectId] = alloc;
+
 				++event_count;
 			}
 
@@ -311,6 +341,22 @@ namespace Mono.Profiling
 				}
 
 				++event_count;
+			}
+
+			public override void Visit (GCMoveEvent evt)
+			{
+				for (int i = 0; i < evt.MovedObjects.Length; i += 2) {
+					Allocation alloc;
+					if (allocations.TryGetValue (evt.MovedObjects [i], out alloc)) {
+						long fromId = evt.MovedObjects [i];
+						long toId = evt.MovedObjects [i + 1];
+						alloc.ObjectId = toId;
+						allocations.Remove (fromId);
+						allocations [toId] = alloc;
+					} else {
+						Fail (evt, "GC Move event for an allocation we know nothing about");
+					}
+				}
 			}
 
 			//misc events
