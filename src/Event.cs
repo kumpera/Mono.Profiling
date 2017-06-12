@@ -136,6 +136,7 @@ namespace Mono.Profiling
 		Runtime = 1 << 13,
 		System = 1 << 14,
 		PerfCounters = 1 << 15,
+		Profiler = 1 << 16
 	}
 
 	public enum CounterType {

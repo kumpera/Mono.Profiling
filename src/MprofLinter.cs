@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Mono.Profiling
 {
@@ -29,6 +30,23 @@ namespace Mono.Profiling
 
 	*/
 
+	struct Allocation {
+		public ulong Time;
+		public long TypeId;
+		public long ObjectId;
+		public ulong Size;
+		public long[] Frames;
+
+		public Allocation (ulong time, long typeId, long objectId, ulong size, long[] frames)
+		{
+			Time = time;
+			TypeId = typeId;
+			ObjectId = objectId;
+			Size = size;
+			Frames = frames;
+		}
+	}
+
 	public class MprofLinter {
 		Decoder decoder;
 		VerificationVisitor visitor;
@@ -52,15 +70,25 @@ namespace Mono.Profiling
 
 			HashSet<long> loadedTypes = new HashSet <long> ();
 			HashSet<long> runningThreads = new HashSet <long> ();
+			Dictionary<long, Allocation> allocations = new Dictionary<long, Allocation> ();
 
 			void Fail (Event evt, string reason) {
-				Console.WriteLine ("FAIL: {0} on {1}", reason, evt.GetType ().Name);
-				++errors;
+				Fail (String.Format ("{0} on {1}", reason, evt.GetType ().Name));
 			}
+
+			readonly Dictionary<string, int> specific_errors = new Dictionary<string, int> ();
 
 			void Fail (string reason) {
 				Console.WriteLine ("FAIL: {0}", reason);
 				++errors;
+
+				// Add errors to dictionary, for the summary
+				int specific_error_count = 0;
+				if (specific_errors.TryGetValue (reason, out specific_error_count)) {
+					++specific_errors [reason];
+				} else {
+					specific_errors [reason] = 1;
+				}
 			}
 
 			void VerifyBacktrace (Event evt, long[] frames)
@@ -202,7 +230,7 @@ namespace Mono.Profiling
 			public override void Visit (ThreadNameEvent threadName)
 			{
 				if (!runningThreads.Contains (threadName.Id))
-					Fail (threadName, string.Format ("Invalid thread id {0:X}", threadName.Id));
+					Fail (threadName, "Invalid thread id");
 				++event_count;
 			}
 
@@ -214,7 +242,7 @@ namespace Mono.Profiling
 			public override void Visit (SampleHitEvent sample)
 			{
 				if (!runningThreads.Contains (sample.ThreadId))
-					Fail (sample, string.Format ("Sample points to invalid thread id {0:X}", sample.ThreadId));
+					Fail (sample, "Sample points to invalid thread id");
 
 				foreach (var frame in sample.ManagedFrames) {
 					if (!loadedMethods.ContainsKey (frame.MethodId)) {
@@ -255,6 +283,11 @@ namespace Mono.Profiling
 					Fail ("Heapshot object received while no heapshot in progress");
 				if (!loadedTypes.Contains (evt.TypeId))
 					Fail (evt, "Allocation for unreported type");
+
+				Allocation alloc;
+				if (!allocations.TryGetValue (evt.ObjectId, out alloc))
+					Fail (evt, "Object in heapshot not known at this time");
+
 				++event_count;
 			}
 
@@ -264,6 +297,13 @@ namespace Mono.Profiling
 				if (!loadedTypes.Contains (evt.TypeId))
 					Fail (evt, "Allocation for unreported type");
 				VerifyBacktrace (evt, evt.Frames);
+
+				Allocation alloc;
+				if (allocations.TryGetValue (evt.ObjectId, out alloc))
+					Fail (evt, "Allocation at address already in use");
+				alloc = new Allocation (evt.Time, evt.TypeId, evt.ObjectId, evt.Size, evt.Frames);
+				allocations [evt.ObjectId] = alloc;
+
 				++event_count;
 			}
 
@@ -271,7 +311,7 @@ namespace Mono.Profiling
 			public override void Visit (HandleCreatedEvent handle)
 			{
 				if (gchandles.Contains (handle.HandleId))
-					Fail (handle, string.Format ("Duplicate handle id {0}", handle.HandleId));
+					Fail (handle, string.Format ("Duplicate GC handle", handle.HandleId));
 				gchandles.Add (handle.HandleId);
 
 				VerifyBacktrace (handle, handle.Frames);
@@ -281,7 +321,7 @@ namespace Mono.Profiling
 			public override void Visit (HandleDestroyedEvent evt)
 			{
 				if (!gchandles.Contains (evt.HandleId))
-					Fail (evt, string.Format ("Unknown handle id {0}", evt.HandleId));
+					Fail (evt, string.Format ("Unknown GC handle id", evt.HandleId));
 				gchandles.Remove (evt.HandleId);
 
 				VerifyBacktrace (evt, evt.Frames);
@@ -313,6 +353,22 @@ namespace Mono.Profiling
 				++event_count;
 			}
 
+			public override void Visit (GCMoveEvent evt)
+			{
+				for (int i = 0; i < evt.MovedObjects.Length; i += 2) {
+					Allocation alloc;
+					if (allocations.TryGetValue (evt.MovedObjects [i], out alloc)) {
+						long fromId = evt.MovedObjects [i];
+						long toId = evt.MovedObjects [i + 1];
+						alloc.ObjectId = toId;
+						allocations.Remove (fromId);
+						allocations [toId] = alloc;
+					} else {
+						Fail (evt, "GC Move event for an allocation we know nothing about");
+					}
+				}
+			}
+
 			//misc events
 			public override void Visit (USymEvent evt)
 			{
@@ -322,12 +378,16 @@ namespace Mono.Profiling
 			internal void PrintSummary ()
 			{
 				Console.WriteLine ("events:{0} ignored:{1} errors: {2}", event_count, ignored_count, errors);
+				Console.WriteLine ("\nError summary:");
+				foreach (var error in specific_errors.OrderByDescending (x => x.Value).Take (20)) {
+					Console.WriteLine ("\t{0,-70}:\t{1,10}", error.Key, error.Value);
+				}
 			}
 
 			internal void VerifyEndOfFileState ()
 			{
 				foreach (var t in runningThreads)
-					Fail (string.Format ("Missing thread exit event for tid {0:X}", t));
+					Fail ("Missing thread exit event");
 			}
 		}
 
